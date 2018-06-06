@@ -71,16 +71,19 @@ is_element(Key, Bitmap) ->
 is_element(Key, Bitmap, [Idx | T]) ->
     %% If we are looking for the first bit, do slightly different math
     %% than if we are looking for later bits.
-    case Idx > 0 of
-        true ->
-            PreSize = Idx - 1,
-            <<_:PreSize/bits, Bit:1/bits, _/bits>> = Bitmap;
-        false ->
-            <<Bit:1/bits, _/bits>> = Bitmap
-    end,
+   Bit1 =  
+      case Idx > 0 of
+           true ->
+               PreSize = Idx - 1,
+               <<_:PreSize/bits, Bit:1/bits, _/bits>> = Bitmap,
+               Bit;
+           false ->
+               <<Bit:1/bits, _/bits>> = Bitmap,
+               Bit
+       end,
 
     %% Check if the bit is on.
-    case Bit of
+    case Bit1 of
         <<1:1>> -> is_element(Key, Bitmap, T);
         <<0:1>> -> false
     end;

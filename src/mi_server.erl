@@ -136,7 +136,10 @@ stop(Server) ->
 init([Root]) ->
     lager:debug("loading merge_index '~s'", [Root]),
     %% Seed the random generator...
-    random:seed(now()),
+    Seed = {erlang:monotonic_time(), 
+            erlang:time_offset(), 
+            erlang:unique_integer()},
+    _ = rand:seed(exs64, Seed ),
 
     %% Load from disk...
     filelib:ensure_dir(join(Root, "ignore")),
@@ -346,13 +349,14 @@ handle_call({fold, FoldFun, Acc}, _From, State) ->
 
 handle_call(is_empty, _From, State) ->
     %% Check if we have buffer data...
-    case State#state.buffers of
-        [] ->
-            HasBufferData = false;
-        [Buffer] ->
-            HasBufferData = mi_buffer:size(Buffer) > 0;
-        _ ->
-            HasBufferData = true
+    HasBufferData = 
+      case State#state.buffers of
+         [] ->
+            false;
+         [Buffer] ->
+            mi_buffer:size(Buffer) > 0;
+         _ ->
+            true
     end,
 
     %% Check if we have segment data.

@@ -191,7 +191,7 @@ write_to_ets(Table, Postings) ->
 -spec gen_filter(merge_index:index(), merge_index:field(),
                  merge_index:mi_term(), merge_index:mi_term(),
                  merge_index:size()) ->
-                        fun((merge_index:index(), merge_index:field(), merge_index:mi_term()) -> boolean()).
+                        fun(({merge_index:index(), merge_index:field(), merge_index:mi_term()}) -> boolean()).
 gen_filter(Index, Field, StartTerm, EndTerm, Size) ->
     %% Construct a function to check start bounds...
     StartFun = case StartTerm of

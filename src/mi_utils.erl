@@ -105,5 +105,5 @@ hash_signature_binary(<<>>, Acc) ->
 %% Add some random variation (plus or minus 25%) to the rollover size
 %% so that we don't get all buffers rolling over at the same time.
 fuzz(Value, FuzzPercent) ->
-    Scale = 1 + (((random:uniform(100) - 50)/100) * FuzzPercent * 2),
+    Scale = 1 + (((rand:uniform(100) - 50)/100) * FuzzPercent * 2),
     Value * Scale.

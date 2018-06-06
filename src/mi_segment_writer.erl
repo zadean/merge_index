@@ -146,13 +146,14 @@ from_iterator_process_start_term(Key, W) ->
         LastKey == undefined orelse
         element(1, Key) /= element(1, LastKey) orelse
         element(2, Key) /= element(2, LastKey),
-    case ShouldStartBlock of
-        true ->
+    W2 = 
+      case ShouldStartBlock of
+         true ->
             W1 = from_iterator_process_end_block(W),
-            W2 = from_iterator_process_start_block(W1);
-        false ->
-            W2 = W
-    end,
+            from_iterator_process_start_block(W1);
+         false ->
+            W
+      end,
 
     %% Write the key entry to the data file.
     from_iterator_write_key(W2, Key).
@@ -255,12 +256,13 @@ from_iterator_write_key(W, Key) ->
 from_iterator_write_values(W) ->
     %% Serialize and compress the values.
     ValuesStaging = lists:reverse(W#writer.values_staging),
-    case length(W#writer.values_staging) =< ?VALUES_COMPRESS_THRESHOLD(W) of
-        true ->
-            Bytes = term_to_binary(ValuesStaging);
-        false ->
-            Bytes = term_to_binary(ValuesStaging, [{compressed, ?VALUES_COMPRESS_LEVEL(W)}])
-    end,
+    Bytes = 
+      case length(W#writer.values_staging) =< ?VALUES_COMPRESS_THRESHOLD(W) of
+         true ->
+            term_to_binary(ValuesStaging);
+         false ->
+            term_to_binary(ValuesStaging, [{compressed, ?VALUES_COMPRESS_LEVEL(W)}])
+      end,
     
     %% Figure out what we want to write to disk.
     Size = erlang:iolist_size(Bytes),
