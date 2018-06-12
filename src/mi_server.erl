@@ -74,7 +74,7 @@
           segments
          }).
 
--define(RESULTVEC_SIZE, 1000).
+-define(RESULTVEC_SIZE, 500).
 -define(DELETEME_FLAG, ".deleted").
 
 %%%===================================================================
