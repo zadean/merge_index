@@ -2,3 +2,5 @@ ebin
 .eunit
 doc
 deps
+/.project
+/rebar.lock
