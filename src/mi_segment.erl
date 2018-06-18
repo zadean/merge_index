@@ -416,12 +416,34 @@ iterate_range_by_term_1(File, BaseKey, Index, Field, StartTerm, EndTerm, Size,
                     iterate_range_by_term_1(File, CurrKey, Index, Field,
                                             StartTerm, EndTerm, Size,
                                             false, [], IteratorsAcc);
+                (Size == upper orelse Size == none) andalso 
+                  CurrKey == {Index, Field, StartTerm} ->
+                   % exclude lower, so skip
+                    iterate_range_by_term_1(File, CurrKey, Index, Field,
+                                            StartTerm, EndTerm, Size,
+                                            false, [], IteratorsAcc);
                 I == Index andalso F == Field
-                andalso (EndTerm == undefined orelse T =< EndTerm) ->
-                    NewIteratorsAcc = possibly_add_iterator(BaseKey,
-                                                            ResultsAcc,
-                                                            IteratorsAcc),
-                    case Size == 'all' orelse size(StartTerm) == Size of
+                  andalso (Size == lower orelse Size == none) andalso T == EndTerm ->
+                   % excluded upper, so done
+                    file:close(File),
+                    possibly_add_term_iterator(BaseKey, ResultsAcc, IteratorsAcc);
+                I == Index andalso F == Field
+                  andalso (EndTerm == undefined orelse T =< EndTerm) ->
+                    NewIteratorsAcc =
+                      if Size == none;
+                         Size == lower;
+                         Size == upper;
+                         Size == both ->
+                            possibly_add_term_iterator(BaseKey,
+                                                       ResultsAcc,
+                                                       IteratorsAcc);
+                         true ->
+                            possibly_add_iterator(BaseKey,
+                                                  ResultsAcc,
+                                                  IteratorsAcc)
+                      end,
+                    case is_atom(Size) orelse (is_integer(Size) andalso 
+                                                 size(StartTerm) == Size) of
                         true ->
                             iterate_range_by_term_1(File, CurrKey, Index,
                                                     Field, StartTerm,
@@ -433,6 +455,12 @@ iterate_range_by_term_1(File, BaseKey, Index, Field, StartTerm, EndTerm, Size,
                                                     Size, false, [],
                                                     NewIteratorsAcc)
                     end;
+                Size == none;
+                Size == lower;
+                Size == upper;
+                Size == both ->
+                    file:close(File),
+                    possibly_add_term_iterator(BaseKey, ResultsAcc, IteratorsAcc);
                 true ->
                     file:close(File),
                     possibly_add_iterator(BaseKey, ResultsAcc, IteratorsAcc)
@@ -458,11 +486,23 @@ possibly_add_iterator({_, Field, Term}, Results, IteratorsAcc) ->
     Iterator = fun() -> iterate_list(Field, Term, Results1) end,
     [Iterator|IteratorsAcc].
 
+possibly_add_term_iterator(_, [], IteratorsAcc) ->
+    IteratorsAcc;
+possibly_add_term_iterator({_, Field, Term}, Results, IteratorsAcc) ->
+    Results1 = lists:flatten(lists:reverse(Results)),
+    Iterator = fun() -> iterate_term_list(Field, Term, Results1) end,
+    [Iterator|IteratorsAcc].
+
 %% Turn a list into an iterator.
 iterate_list(_, _, []) ->
     eof;
 iterate_list(Field, Term, [H|T]) ->
     {H, fun() -> iterate_list(Field, Term, T) end}.
+
+iterate_term_list(_, _, []) ->
+    eof;
+iterate_term_list(Field, Term, [{H1,H2,H3}|T]) ->
+    {{Term,H1,H2,H3}, fun() -> iterate_term_list(Field, Term, T) end}.
 
 %% PRIVATE FUNCTIONS
 

@@ -36,6 +36,7 @@
     iterator/2,
     lookup/5,
     range/7,
+    range_term/7,
     set_deleteme_flag/1,
     start_link/1,
     stop/1,
@@ -50,6 +51,7 @@
 
 -export([lookup/8,
          range/10,
+         range_term/10,
          iterate/6,
          iterate2/5]).
 
@@ -115,6 +117,14 @@ range(Server, Index, Field, StartTerm, EndTerm, Size, Filter) ->
     Ref = make_ref(),
     ok = gen_server:call(Server,
                          {range, Index, Field, StartTerm, EndTerm, Size,
+                          Filter, self(), Ref},
+                         infinity),
+    {ok, Ref}.
+
+range_term(Server, Index, Field, StartTerm, EndTerm, Include, Filter) ->
+    Ref = make_ref(),
+    ok = gen_server:call(Server,
+                         {range_term, Index, Field, StartTerm, EndTerm, Include,
                           Filter, self(), Ref},
                          infinity),
     {ok, Ref}.
@@ -308,6 +318,23 @@ handle_call({range, Index, Field, StartTerm, EndTerm, Size, Filter, Pid, Ref},
     NewLocks = lock_all(Locks, Buffers, Segments),
     RPid = spawn_link(?MODULE, range,
                       [Index, Field, StartTerm, EndTerm, Size, Filter,
+                       Pid, Ref, Buffers, Segments]),
+
+    NewPids = [ #stream_range{pid=RPid,
+                              caller=Pid,
+                              ref=Ref,
+                              buffers=Buffers,
+                              segments=Segments}
+                | State#state.lookup_range_pids ],
+    {reply, ok, State#state { locks=NewLocks, lookup_range_pids=NewPids }};
+
+handle_call({range_term, Index, Field, StartTerm, EndTerm, Include, Filter, Pid, Ref},
+            _From, State) ->
+    #state { locks=Locks, buffers=Buffers, segments=Segments } = State,
+
+    NewLocks = lock_all(Locks, Buffers, Segments),
+    RPid = spawn_link(?MODULE, range_term,
+                      [Index, Field, StartTerm, EndTerm, Include, Filter,
                        Pid, Ref, Buffers, Segments]),
 
     NewPids = [ #stream_range{pid=RPid,
@@ -655,6 +682,15 @@ range(Index, Field, StartTerm, EndTerm, Size, Filter, Pid, Ref,
     iterate(Filter, Pid, Ref, undefined, GroupIterator(), []),
     ok.
 
+range_term(Index, Field, StartTerm, EndTerm, Include, Filter, Pid, Ref,
+      Buffers, Segments) ->
+    BufferIterators = lists:flatten([mi_buffer:iterators(Index, Field, StartTerm, EndTerm, Include, X) || X <- Buffers]),
+    SegmentIterators = lists:flatten([mi_segment:iterators(Index, Field, StartTerm, EndTerm, Include, X) || X <- Segments]),
+    GroupIterator = build_iterator_tree(BufferIterators ++ SegmentIterators),
+
+    iterate(Filter, Pid, Ref, undefined, GroupIterator(), []),
+    ok.
+
 iterate(_Filter, Pid, Ref, LastValue, Iterator, Acc)
   when length(Acc) > ?RESULTVEC_SIZE ->
     Pid ! {results, lists:reverse(Acc), Ref},
@@ -673,6 +709,21 @@ iterate(Filter, _Pid, _Ref, LastValue,
             iterate(Filter, _Pid, _Ref, Value, Iter(), [{Value, Props}|Acc]);
         false ->
             iterate(Filter, _Pid, _Ref, Value, Iter(), Acc)
+    end;
+iterate(Filter, _Pid, _Ref, LastValue,
+                      {{Term, Value, _TS, Props}, Iter}, Acc) ->
+    %% TODO: Ideally, dedup should happen a layer above, as noted in
+    %% the following issue.
+    %%
+    %% https://issues.basho.com/show_bug.cgi?id=1099
+    IsDuplicate = (LastValue == {Term,Value}),
+    IsDeleted = (Props == undefined),
+    case (not IsDuplicate) andalso (not IsDeleted)
+        andalso Filter(Value, Props) of
+        true  ->
+            iterate(Filter, _Pid, _Ref, {Term,Value}, Iter(), [{Term, Value, Props}|Acc]);
+        false ->
+            iterate(Filter, _Pid, _Ref, {Term,Value}, Iter(), Acc)
     end;
 iterate(_, Pid, Ref, _, eof, Acc) ->
     Pid ! {results, lists:reverse(Acc), Ref},

@@ -130,13 +130,27 @@ iterator(Index, Field, Term, Buffer) ->
     List3 = lists:sort(List2),
     fun() -> iterate_list(List3) end.
 
+term_iterator(Index, Field, Term, Buffer) ->
+    Table = Buffer#buffer.table,
+    List1 = ets:lookup(Table, {Index, Field, Term}),
+    List2 = [{Term,V,K,P} || {_Key,V,K,P} <- List1],
+    List3 = lists:sort(List2),
+    fun() -> iterate_list(List3) end.
+
 %% Return a list of iterators over a range.
 iterators(Index, Field, StartTerm, EndTerm, Size, Buffer) ->
     Table = Buffer#buffer.table,
     Keys = mi_utils:ets_keys(Table),
     Filter = gen_filter(Index, Field, StartTerm, EndTerm, Size),
     MatchingKeys = lists:filter(Filter, Keys),
-    [iterator(I,F,T, Buffer) || {I,F,T} <- MatchingKeys].
+    if Size == none;
+       Size == upper;
+       Size == lower;
+       Size == both ->
+          [term_iterator(I,F,T, Buffer) || {I,F,T} <- MatchingKeys];
+       true ->
+          [iterator(I,F,T, Buffer) || {I,F,T} <- MatchingKeys]
+    end.
 
 %% Turn a list into an iterator.
 iterate_list([]) ->
@@ -200,7 +214,10 @@ gen_filter(Index, Field, StartTerm, EndTerm, Size) ->
                                {KeyIndex, KeyField} >= {Index, Field}
                        end;
                    _ ->
-                       fun(Key) ->
+                       fun(Key) when Size == upper;
+                                     Size == none ->
+                               Key > {Index, Field, StartTerm};
+                          (Key) ->
                                Key >= {Index, Field, StartTerm}
                        end
                end,
@@ -212,15 +229,18 @@ gen_filter(Index, Field, StartTerm, EndTerm, Size) ->
                                {KeyIndex, KeyField} =< {Index, Field}
                        end;
                    _ ->
-                       fun(Key) ->
-                               Key =< {Index, Field, EndTerm}
+                       fun(Key) when Size == lower;
+                                     Size == none ->
+                               Key < {Index, Field, EndTerm};
+                          (Key) ->
+                               Key =< {Index, Field, EndTerm}                          
                        end
                end,
 
     %% Possibly construct a function to check size. Return the final
     %% filter function...
-    case Size of
-        all ->
+    case is_integer(Size) of
+        false ->
             fun(Key) -> StartFun(Key) andalso EndFun(Key) end;
         _ ->
             SizeFun = fun({_, _, KeyTerm}) -> erlang:size(KeyTerm) == Size end,

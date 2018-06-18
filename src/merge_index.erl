@@ -39,7 +39,7 @@
     stop/1,
     index/2,
     lookup/5, lookup_sync/5,
-    range/7, range_sync/7,
+    range/7, range_term/7, range_sync/7,
     iterator/2,
     info/4,
     is_empty/1,
@@ -52,6 +52,7 @@
 -type(field() :: any()).
 -type(mi_term() :: any()).
 -type(size() :: all | integer()).
+-type(include() :: none | lower | upper | both ).
 -type(posting() :: {Index::index(),
                     Field::field(),
                     Term::mi_term(),
@@ -131,6 +132,27 @@ lookup_sync(Server, Index, Field, Term, Filter) ->
 range(Server, Index, Field, StartTerm, EndTerm, Size, Filter) ->
     {ok, Ref} = mi_server:range(Server, Index, Field, StartTerm, EndTerm,
                                 Size, Filter),
+    make_result_iterator(Ref).
+
+%% @doc Much like `range' except allows one to specify a range of
+%% terms and if the range should be inclusive. 
+%% Returns: [{Term,Value,Props}] sorted by Term. 
+%%
+%% `StartTerm' - The start of the range.
+%%
+%% `EndTerm' - The end of the range.
+%%
+%% `Include' - `both' if StartTerm and EndTerm should be included.
+%%             `lower' if only StartTerm should be included. 
+%%             `upper' if only EndTerm should be included. 
+%%             `none' if StartTerm and EndTerm should be excluded. 
+%%
+%% @see lookup/5.
+-spec range_term(pid(), index(), field(), mi_term(), mi_term(),
+                 include(), function()) -> iterator().
+range_term(Server, Index, Field, StartTerm, EndTerm, Include, Filter) ->
+    {ok, Ref} = mi_server:range_term(Server, Index, Field, StartTerm, EndTerm,
+                                Include, Filter),
     make_result_iterator(Ref).
 
 %% @doc Much like `lookup_sync' except allows one to specify a range
