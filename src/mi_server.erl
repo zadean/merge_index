@@ -719,7 +719,7 @@ iterate(Filter, _Pid, _Ref, LastValue,
     IsDuplicate = (LastValue == {Term,Value}),
     IsDeleted = (Props == undefined),
     case (not IsDuplicate) andalso (not IsDeleted)
-        andalso Filter(Value, Props) of
+        andalso Filter(Term, Value, Props) of
         true  ->
             iterate(Filter, _Pid, _Ref, {Term,Value}, Iter(), [{Term, Value, Props}|Acc]);
         false ->
