@@ -23,6 +23,7 @@
 
 -module(mi_segment).
 -author("Rusty Klophaus <rusty@basho.com>").
+-include_lib("kernel/include/logger.hrl").
 -export([
     exists/1,
     open_read/1,
@@ -72,7 +73,7 @@ open_read(Root) ->
         true  ->
             {ok, FileInfo} = file:read_file_info(data_file(Root)),
             OffsetsTable = read_offsets(Root),
-            lager:debug("opened segment '~s' for read", [Root]),
+            ?LOG_DEBUG("opened segment '~s' for read", [Root]),
             #segment {
                        root=Root,
                        offsets_table=OffsetsTable,
@@ -94,7 +95,7 @@ open_write(Root) ->
             %% TODO: Do we really need to go through the trouble of writing empty files here?
             file:write_file(data_file(Root), <<"">>),
             file:write_file(offsets_file(Root), <<"">>),
-            lager:debug("opened segment '~s' for write", [Root]),
+            ?LOG_DEBUG("opened segment '~s' for write", [Root]),
             #segment {
                        root = Root,
                        offsets_table = ets:new(segment_offsets, [ordered_set, public])

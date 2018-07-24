@@ -23,6 +23,7 @@
 -module(mi_buffer).
 -author("Rusty Klophaus <rusty@basho.com>").
 -include("merge_index.hrl").
+-include_lib("kernel/include/logger.hrl").
 -export([
     new/1,
     filename/1,
@@ -58,7 +59,7 @@ new(Filename) ->
     open_inner(FH, Table, Filename),
     {ok, Size} = file:position(FH, cur),
 
-    lager:debug("opened buffer '~s'", [Filename]),
+    ?LOG_DEBUG("opened buffer '~s'", [Filename]),
     %% Return the buffer.
     #buffer { filename=Filename, handle=FH, table=Table, size=Size }.
 
@@ -83,7 +84,7 @@ delete(Buffer=#buffer{table=Table, filename=Filename}) ->
     close_filehandle(Buffer),
     file:delete(Filename),
     file:delete(Filename ++ ".deleted"),
-    lager:debug("deleted buffer '~s'", [Filename]),
+    ?LOG_DEBUG("deleted buffer '~s'", [Filename]),
     ok.
 
 close_filehandle(Buffer) ->
@@ -184,7 +185,7 @@ read_value(FH, Filename) ->
     end.
 
 log_truncation(Filename, Position) ->
-    error_logger:warning_msg("Corrupted posting detected in ~s after reading ~w bytes, ignoring remainder.",
+    ?LOG_WARNING("Corrupted posting detected in ~s after reading ~w bytes, ignoring remainder.",
                           [Filename, Position]).
 
 write_to_file(FH, Terms) when is_list(Terms) ->

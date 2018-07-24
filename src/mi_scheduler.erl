@@ -32,6 +32,7 @@
 -export([worker_loop/1]).
 
 -include("merge_index.hrl").
+-include_lib("kernel/include/logger.hrl").
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -81,11 +82,11 @@ handle_call({schedule_compaction, Pid}, _From, #state { queue = Q } = State) ->
     end;
 
 handle_call(Event, _From, State) ->
-    lager:error("unhandled_call ~p", [Event]),
+    ?LOG_ERROR("unhandled_call ~p", [Event]),
     {reply, ok, State}.
 
 handle_cast(Msg, State) ->
-    lager:error("unhandled_cast ~p", [Msg]),
+    ?LOG_ERROR("unhandled_cast ~p", [Msg]),
     {noreply, State}.
 
 handle_info({worker_ready, WorkerPid}, #state { queue = Q } = State) ->
@@ -98,7 +99,7 @@ handle_info({worker_ready, WorkerPid}, #state { queue = Q } = State) ->
             {noreply, NewState}
     end;
 handle_info({'EXIT', WorkerPid, Reason}, #state { worker = WorkerPid } = State) ->
-    lager:error("Compaction worker ~p exited: ~p", [WorkerPid, Reason]),
+    ?LOG_ERROR("Compaction worker ~p exited: ~p", [WorkerPid, Reason]),
     %% Start a new worker.
     Self=self(),
     NewWorkerPid = spawn_link(fun() -> worker_loop(Self) end),
@@ -106,7 +107,7 @@ handle_info({'EXIT', WorkerPid, Reason}, #state { worker = WorkerPid } = State) 
     {noreply, NewState};
 
 handle_info(Info, State) ->
-    lager:error("unhandled_info ~p", [Info]),
+    ?LOG_ERROR("unhandled_info ~p", [Info]),
     {noreply, State}.
 
 terminate(_Reason, _State) ->
@@ -130,7 +131,7 @@ worker_loop(Parent) ->
                 {ok, OldSegments, OldBytes} ->
                     case ElapsedSecs > 1 of
                         true ->
-                            lager:info(
+                            ?LOG_INFO(
                               "Pid ~p compacted ~p segments for ~p bytes in ~p seconds, ~.2f MB/sec",
                               [Pid, OldSegments, OldBytes, ElapsedSecs, OldBytes/ElapsedSecs/(1024*1024)]);
                         false ->
@@ -138,7 +139,7 @@ worker_loop(Parent) ->
                     end;
 
                 {Error, Reason} when Error == error; Error == 'EXIT' ->
-                    lager:error("Failed to compact ~p: ~p", [Pid, Reason])
+                    ?LOG_ERROR("Failed to compact ~p: ~p", [Pid, Reason])
             end,
             ?MODULE:worker_loop(Parent);
         _ ->

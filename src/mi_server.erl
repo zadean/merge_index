@@ -23,6 +23,7 @@
 -module(mi_server).
 -author("Rusty Klophaus <rusty@basho.com>").
 -include("merge_index.hrl").
+-include_lib("kernel/include/logger.hrl").
 
 -export([
     buffer_to_segment/3,
@@ -144,7 +145,7 @@ stop(Server) ->
 %%%===================================================================
 
 init([Root]) ->
-    lager:debug("loading merge_index '~s'", [Root]),
+    ?LOG_DEBUG("loading merge_index '~s'", [Root]),
     %% Seed the random generator...
     Seed = {erlang:monotonic_time(), 
             erlang:time_offset(), 
@@ -172,7 +173,7 @@ init([Root]) ->
         to_convert = queue:new()
     },
 
-    lager:debug("finished loading merge_index '~s' with rollover size ~p",
+    ?LOG_DEBUG("finished loading merge_index '~s' with rollover size ~p",
                [Root, State#state.buffer_rollover_size]),
     {ok, State}.
 
@@ -438,7 +439,7 @@ handle_call(stop, _From, State) ->
     {stop, normal, ok, State};
 
 handle_call(Msg, _From, State) ->
-    lager:error("Unexpected call ~p", [Msg]),
+    ?LOG_ERROR("Unexpected call ~p", [Msg]),
     {reply, ok, State}.
 
 handle_cast({compacted, CompactSegmentWO, OldSegments, OldBytes, From}, State) ->
@@ -522,14 +523,14 @@ handle_cast({buffer_to_segment, Buffer, SegmentWO}, State) ->
             end,
             {noreply, NewState};
         false ->
-            lager:warning("`buffer_to_segment` cast received"
+            ?LOG_WARNING("`buffer_to_segment` cast received"
                           " for nonexistent buffer, probably"
                           " because drop was called"),
             {noreply, State}
     end;
 
 handle_cast(Msg, State) ->
-    lager:error("Unexpected cast ~p", [Msg]),
+    ?LOG_ERROR("Unexpected cast ~p", [Msg]),
     {noreply, State}.
 
 handle_info({'EXIT', CompactingPid, Reason},
@@ -562,7 +563,7 @@ handle_info({'EXIT', Pid, Reason},
                 normal ->
                     SR#stream_range.caller ! {eof, SR#stream_range.ref};
                 _ ->
-                    lager:error("lookup/range failure: ~p", [Reason]),
+                    ?LOG_ERROR("lookup/range failure: ~p", [Reason]),
                     SR#stream_range.caller
                         ! {error, SR#stream_range.ref, Reason}
             end,
@@ -589,7 +590,7 @@ handle_info({'EXIT', Pid, Reason},
     end;
 
 handle_info(Msg, State) ->
-    lager:error("Unexpected info ~p", [Msg]),
+    logge:rerror("Unexpected info ~p", [Msg]),
     {noreply, State}.
 
 terminate(_Reason, _State) ->
@@ -610,7 +611,7 @@ read_buf_and_seg(Root) ->
     F1 = fun(Filename) ->
         Basename = filename:basename(Filename, ?DELETEME_FLAG),
         Basename1 = filename:join(Root, Basename ++ ".*"),
-        lager:debug("deleting '~s'", [Basename1]),
+        ?LOG_DEBUG("deleting '~s'", [Basename1]),
         [ok = file:delete(X) || X <- filelib:wildcard(Basename1)]
     end,
     [F1(X) || X <- filelib:wildcard(join(Root, "*.deleted"))],
@@ -633,7 +634,7 @@ read_buf_and_seg(Root) ->
 read_segments([], _Segments) -> [];
 read_segments([SName|Rest], Segments) ->
     %% Read the segment from disk...
-    lager:debug("opening segment: '~s'", [SName]),
+    ?LOG_DEBUG("opening segment: '~s'", [SName]),
     Segment = mi_segment:open_read(SName),
     [Segment|read_segments(Rest, Segments)].
 
@@ -650,7 +651,7 @@ read_buffers(_Root, [{_BNum, BName}], NextID, Segments) ->
 
 read_buffers(Root, [{BNum, BName}|Rest], NextID, Segments) ->
     %% Multiple buffers exist... convert them into segments...
-    lager:debug("converting buffer: '~s' to segment", [BName]),
+    ?LOG_DEBUG("converting buffer: '~s' to segment", [BName]),
     SName = join(Root, "segment." ++ integer_to_list(BNum)),
     set_deleteme_flag(SName),
     Buffer = mi_buffer:new(BName),
@@ -754,7 +755,8 @@ iterate2(Filter, _Pid, _Ref, {{I, F, T, Value, TS, Props}, Iter},
          {Results, _MsgCount}) ->
     case Filter(Value, Props) of
         true  ->
-            V = {I, F, T, Value, -1 * TS, Props},
+            V = {I, F, T, Value, Props, -1 * TS}, 
+            % Swap Props and TS to avoid transform for insert
             iterate2(Filter, _Pid, _Ref, Iter(), {[V|Results], _MsgCount});
         false ->
             iterate2(Filter, _Pid, _Ref, Iter(), {Results, _MsgCount})

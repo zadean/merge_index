@@ -22,6 +22,7 @@
 %% -------------------------------------------------------------------
 -module(mi_buffer_converter).
 
+-include_lib("kernel/include/logger.hrl").
 %% API
 -export([start_link/3, convert/3]).
 
@@ -63,18 +64,18 @@ convert(Parent, Server, Root, Buffer) ->
         mi_server:buffer_to_segment(Server, Buffer, SegmentWO),
         exit(normal)
     catch
-        error:Reason ->
+        error:Reason:Stacktrace ->
             case mi_buffer:exists(Buffer) of
                 false ->
-                    lager:warning("conversion for buffer ~p failed, probably"
+                    ?LOG_WARNING("conversion for buffer ~p failed, probably"
                                   " because the buffer has been dropped ~p",
                                   [mi_buffer:filename(Buffer),
-                                   erlang:get_stacktrace()]),
+                                   Stacktrace]),
                     exit(normal);
                 true ->
-                    lager:error("conversion for buffer ~p failed with trace ~p",
+                    ?LOG_ERROR("conversion for buffer ~p failed with trace ~p",
                                 [mi_buffer:filename(Buffer),
-                                 erlang:get_stacktrace()]),
+                                 Stacktrace]),
                     exit({error, Reason})
             end
     end.
