@@ -77,7 +77,7 @@
           segments
          }).
 
--define(RESULTVEC_SIZE, 500).
+-define(RESULTVEC_SIZE, 1000).
 -define(DELETEME_FLAG, ".deleted").
 
 %%%===================================================================
@@ -259,6 +259,8 @@ handle_call(start_compaction, From, State) ->
 
     case SegmentsToCompact of
         [] ->
+            {reply, {ok, 0, 0}, State};
+        [_] -> % block single segments, ! hangs...
             {reply, {ok, 0, 0}, State};
         _ ->
             BytesToCompact = lists:sum([mi_segment:filesize(X) || X <- SegmentsToCompact]),
@@ -590,7 +592,7 @@ handle_info({'EXIT', Pid, Reason},
     end;
 
 handle_info(Msg, State) ->
-    logge:rerror("Unexpected info ~p", [Msg]),
+    ?LOG_ERROR("Unexpected info ~p", [Msg]),
     {noreply, State}.
 
 terminate(_Reason, _State) ->
@@ -694,7 +696,9 @@ range_term(Index, Field, StartTerm, EndTerm, Include, Filter, Pid, Ref,
 
 iterate(_Filter, Pid, Ref, LastValue, Iterator, Acc)
   when length(Acc) > ?RESULTVEC_SIZE ->
-    Pid ! {results, lists:reverse(Acc), Ref},
+    Pid ! {results, Acc, Ref}, % do not reverse the list, that happens with 
+                               % continuation-fun in the API
+    %Pid ! {results, lists:reverse(Acc), Ref},
     iterate(_Filter, Pid, Ref, LastValue, Iterator, []);
 iterate(Filter, _Pid, _Ref, LastValue,
                       {{Value, _TS, Props}, Iter}, Acc) ->
@@ -704,30 +708,17 @@ iterate(Filter, _Pid, _Ref, LastValue,
     %% https://issues.basho.com/show_bug.cgi?id=1099
     IsDuplicate = (LastValue == Value),
     IsDeleted = (Props == undefined),
-    case (not IsDuplicate) andalso (not IsDeleted)
-        andalso Filter(Value, Props) of
+    case (not IsDuplicate) andalso (not IsDeleted) andalso 
+           (Filter == true orelse Filter(Value, Props)) of
         true  ->
             iterate(Filter, _Pid, _Ref, Value, Iter(), [{Value, Props}|Acc]);
         false ->
             iterate(Filter, _Pid, _Ref, Value, Iter(), Acc)
     end;
-iterate(Filter, _Pid, _Ref, LastValue,
-                      {{Term, Value, _TS, Props}, Iter}, Acc) ->
-    %% TODO: Ideally, dedup should happen a layer above, as noted in
-    %% the following issue.
-    %%
-    %% https://issues.basho.com/show_bug.cgi?id=1099
-    IsDuplicate = (LastValue == {Term,Value}),
-    IsDeleted = (Props == undefined),
-    case (not IsDuplicate) andalso (not IsDeleted)
-        andalso Filter(Term, Value, Props) of
-        true  ->
-            iterate(Filter, _Pid, _Ref, {Term,Value}, Iter(), [{Term, Value, Props}|Acc]);
-        false ->
-            iterate(Filter, _Pid, _Ref, {Term,Value}, Iter(), Acc)
-    end;
 iterate(_, Pid, Ref, _, eof, Acc) ->
-    Pid ! {results, lists:reverse(Acc), Ref},
+    Pid ! {results, Acc, Ref}, % do not reverse the list, that happens with 
+                               % continuation-fun in the API
+    %Pid ! {results, lists:reverse(Acc), Ref},
     ok.
 
 %% This is currently a copy/paste of iterate with specific changes
