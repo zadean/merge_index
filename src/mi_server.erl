@@ -122,10 +122,10 @@ range(Server, Index, Field, StartTerm, EndTerm, Size, Filter) ->
                          infinity),
     {ok, Ref}.
 
-range_term(Server, Index, Field, StartTerm, EndTerm, Include, Filter) ->
+range_term(Server, Index, Field, StartTerm, EndTerm, Size, Filter) ->
     Ref = make_ref(),
     ok = gen_server:call(Server,
-                         {range_term, Index, Field, StartTerm, EndTerm, Include,
+                         {range_term, Index, Field, StartTerm, EndTerm, Size,
                           Filter, self(), Ref},
                          infinity),
     {ok, Ref}.
@@ -331,13 +331,13 @@ handle_call({range, Index, Field, StartTerm, EndTerm, Size, Filter, Pid, Ref},
                 | State#state.lookup_range_pids ],
     {reply, ok, State#state { locks=NewLocks, lookup_range_pids=NewPids }};
 
-handle_call({range_term, Index, Field, StartTerm, EndTerm, Include, Filter, Pid, Ref},
+handle_call({range_term, Index, Field, StartTerm, EndTerm, Size, Filter, Pid, Ref},
             _From, State) ->
     #state { locks=Locks, buffers=Buffers, segments=Segments } = State,
 
     NewLocks = lock_all(Locks, Buffers, Segments),
     RPid = spawn_link(?MODULE, range_term,
-                      [Index, Field, StartTerm, EndTerm, Include, Filter,
+                      [Index, Field, StartTerm, EndTerm, Size, Filter,
                        Pid, Ref, Buffers, Segments]),
 
     NewPids = [ #stream_range{pid=RPid,
@@ -685,13 +685,13 @@ range(Index, Field, StartTerm, EndTerm, Size, Filter, Pid, Ref,
     iterate(Filter, Pid, Ref, undefined, GroupIterator(), []),
     ok.
 
-range_term(Index, Field, StartTerm, EndTerm, Include, Filter, Pid, Ref,
+range_term(Index, Field, StartTerm, EndTerm, Size, Filter, Pid, Ref,
       Buffers, Segments) ->
-    BufferIterators = lists:flatten([mi_buffer:iterators(Index, Field, StartTerm, EndTerm, Include, X) || X <- Buffers]),
-    SegmentIterators = lists:flatten([mi_segment:iterators(Index, Field, StartTerm, EndTerm, Include, X) || X <- Segments]),
+    BufferIterators = lists:flatten([mi_buffer:iterators(Index, Field, StartTerm, EndTerm, Size, X) || X <- Buffers]),
+    SegmentIterators = lists:flatten([mi_segment:iterators(Index, Field, StartTerm, EndTerm, Size, X) || X <- Segments]),
     GroupIterator = build_iterator_tree(BufferIterators ++ SegmentIterators),
 
-    iterate(Filter, Pid, Ref, undefined, GroupIterator(), []),
+    iterate3(Filter, Pid, Ref, undefined, GroupIterator(), []),
     ok.
 
 iterate(_Filter, Pid, Ref, LastValue, Iterator, Acc)
@@ -716,6 +716,33 @@ iterate(Filter, _Pid, _Ref, LastValue,
             iterate(Filter, _Pid, _Ref, Value, Iter(), Acc)
     end;
 iterate(_, Pid, Ref, _, eof, Acc) ->
+    Pid ! {results, Acc, Ref}, % do not reverse the list, that happens with 
+                               % continuation-fun in the API
+    %Pid ! {results, lists:reverse(Acc), Ref},
+    ok.
+
+iterate3(_Filter, Pid, Ref, LastValue, Iterator, Acc)
+  when length(Acc) > ?RESULTVEC_SIZE ->
+    Pid ! {results, Acc, Ref}, % do not reverse the list, that happens with 
+                               % continuation-fun in the API
+    %Pid ! {results, lists:reverse(Acc), Ref},
+    iterate3(_Filter, Pid, Ref, LastValue, Iterator, []);
+iterate3(Filter, _Pid, _Ref, LastValue,
+                      {{Term, Value, _TS, Props}, Iter}, Acc) ->
+    %% TODO: Ideally, dedup should happen a layer above, as noted in
+    %% the following issue.
+    %%
+    %% https://issues.basho.com/show_bug.cgi?id=1099
+    IsDuplicate = (LastValue == Value),
+    IsDeleted = (Props == undefined),
+    case (not IsDuplicate) andalso (not IsDeleted) andalso 
+           (Filter == true orelse Filter(Value, Props)) of
+        true  ->
+            iterate3(Filter, _Pid, _Ref, Value, Iter(), [{Term, Value, Props}|Acc]);
+        false ->
+            iterate3(Filter, _Pid, _Ref, Value, Iter(), Acc)
+    end;
+iterate3(_, Pid, Ref, _, eof, Acc) ->
     Pid ! {results, Acc, Ref}, % do not reverse the list, that happens with 
                                % continuation-fun in the API
     %Pid ! {results, lists:reverse(Acc), Ref},

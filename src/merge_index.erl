@@ -39,7 +39,7 @@
     stop/1,
     index/2,
     lookup/5, lookup_sync/5,
-    range/7, range_sync/7,
+    range/7, range_sync/7, range_term/7, % znd added range_term so term is returned as well for deletion
     iterator/2,
     info/4,
     is_empty/1,
@@ -131,6 +131,11 @@ lookup_sync(Server, Index, Field, Term, Filter) ->
 range(Server, Index, Field, StartTerm, EndTerm, Size, Filter) ->
     {ok, Ref} = mi_server:range(Server, Index, Field, StartTerm, EndTerm,
                                 Size, Filter),
+    make_result_iterator(Ref).
+
+range_term(Server, Index, Field, StartTerm, EndTerm, Size, Filter) ->
+    {ok, Ref} = mi_server:range_term(Server, Index, Field, StartTerm, EndTerm,
+                                     Size, Filter),
     make_result_iterator(Ref).
 
 %% @doc Much like `lookup_sync' except allows one to specify a range
