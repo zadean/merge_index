@@ -473,6 +473,14 @@ iterate_range_by_term_1(File, BaseKey, Index, Field, StartTerm, EndTerm, Size,
             iterate_range_by_term_1(File, BaseKey, Index, Field, StartTerm,
                                     EndTerm, Size, true, [Results|ResultsAcc],
                                     IteratorsAcc);
+        eof when Size == none;
+                 Size == lower;
+                 Size == upper;
+                 Size == both ->
+            %% Shouldn't get here. If we're here, then the Offset
+            %% values are broken in some way.
+            file:close(File),
+            possibly_add_term_iterator(BaseKey, ResultsAcc, IteratorsAcc);
         eof ->
             %% Shouldn't get here. If we're here, then the Offset
             %% values are broken in some way.
